@@ -25,7 +25,7 @@ class Connect:
 
             # if type= cucm then set username/password for AXL connection
             if ipaddr is  None or passwd is None or username is None:
-                print(f'Usage: CollabConnector.CUCM("ipaddr", "admin", "password", wsdl="./AXLAPI.wsdl")',
+                print(f'Usage: CollabConnector.UCCX.Connect("ipaddr", "admin", "password", db=False)',
                       file=sys.stderr)
             else:
                 self.username = username

@@ -33,7 +33,7 @@ class Connect:
             try:
                 self.version = self.get("version")[0]['version']
             except Exception as err:
-                print(f"Could not connect via vmrest: {err}", file=sys.stderr)
+                raise f"Could not connect via vmrest: {err}"
 
             if db:
                 try:

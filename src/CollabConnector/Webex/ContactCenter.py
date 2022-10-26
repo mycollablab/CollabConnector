@@ -1,6 +1,6 @@
 import requests
 import json
-from OutputStyle import TextStyle
+from .OutputStyle import TextStyle
 import time
 import urllib
 
