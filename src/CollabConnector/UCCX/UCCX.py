@@ -112,11 +112,8 @@ class Connect:
     # REST Wrapper for UCCX
     def uccx_api(self, target_uri, method='GET', data={}):
         if target_uri.find("adminapi/") > -1:
-            target_uri = target_uri
-        else:
-            if target_uri.find('/') == 0:
-                target_uri = target_uri[1:]
-            target_uri = f"https://{self.ipaddr}:8443/adminapi/{target_uri}"
+            target_uri = "".join(target_uri.split("adminapi/")[1:])
+        target_uri = f"https://{self.ipaddr}:8443/adminapi/{target_uri}"
 
         if len(data) > 0:
             target_uri += f"?{urllib.parse.urlencode(data)}"
@@ -133,28 +130,35 @@ class Connect:
                 attempt += 1
             else:
                 # format response into result array
-                try:
-                    result = json.loads(response.text)
-                except Exception as err:
-                    return [response.text]
-                else:
-                    if "apiError" in result.keys():
-                        print(f"Error requesting CCX API: {response.text}", file=sys.stderr)
-                        return False
-
-                    elif isinstance(result, dict):
-                        if target_uri in result:
-                            if isinstance(result[target_uri], list):
-                                return result[target_uri]
-                            else:
-                                return [result[target_uri]]
-                        else:
-                            if isinstance(result, list):
-                                return result
-                            else:
-                                return [result]
+                if 200 <= response.status_code <= 300:
+                    try:
+                        result = json.loads(response.text)
+                    except Exception as err:
+                        return [response.text]
                     else:
-                        return [result]
+                        if "apiError" in result.keys():
+                            print(f"Error requesting CCX API: {target_uri} - {response.text}", file=sys.stderr)
+                            return False
+
+                        elif isinstance(result, dict):
+                            if target_uri in result:
+                                if isinstance(result[target_uri], list):
+                                    return result[target_uri]
+                                else:
+                                    return [result[target_uri]]
+                            else:
+                                if isinstance(result, list):
+                                    return result
+                                else:
+                                    return [result]
+                        else:
+                            return [result]
+                elif 400 <= response.status_code <= 600:
+                    print(f"Error requesting CCX API: {target_uri} - {response.text}", file=sys.stderr)
+                    return False
+                else:
+                    return response.text
+
         return False
 
     # wrapper for api Gets

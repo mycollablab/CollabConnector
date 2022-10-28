@@ -61,7 +61,7 @@ class Connect:
                 raise Exception(f"Error sending Webex REST GET - {uri} {err}")
 
             else:
-                if response.status_code == 200 and (response.headers['Content-Type'].find("json") > -1):
+                if 200 <= response.status_code <= 300 and (response.headers['Content-Type'].find("json") > -1):
                     # create or add to return dict
                     response_data = response.json()
                     if 'items' in response_data:
@@ -74,7 +74,7 @@ class Connect:
                         return return_values
                     else:
                         uri = self.find_next_page(response)
-                elif response.status_code >= 200 and response.status_code < 300:
+                elif 200 <= response.status_code < 300:
                     return True
                 elif response.status_code == 429:  # handle throttling
                     TextStyle.warning(f"Request to {uri} throttled.  Doing it again in a bit.")

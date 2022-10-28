@@ -51,7 +51,7 @@ class Connect:
             return False
 
         else:
-            if response.status_code == 200:
+            if 200 <= response.status_code == 300:
                 # Attempt to parse XML to dict
                 try:
                     result = xmltodict.parse(response.text, dict_constructor=dict)
@@ -60,7 +60,7 @@ class Connect:
 
                 return result
             else:
-                print(f"AST GET Error: {response.status_code} {target_uri}", file=sys.stderr)
+                print(f"AST GET Error: {target_uri} - {response.status_code}", file=sys.stderr)
                 return False
 
     def cluster_discovery(self):

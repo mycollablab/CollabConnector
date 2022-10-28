@@ -115,11 +115,9 @@ class Connect:
     def cupi_api(self, target_uri, method='GET', data={}, paging=True):
         # build URL based on URI in funcion call
         if target_uri.find("vmrest/") > -1:
-            target_uri = target_uri
-        else:
-            if target_uri.find('/') == 0:
-                target_uri = target_uri[1:]
-            target_uri = f"https://{self.ipaddr}:8443/vmrest/{target_uri}"
+            target_uri = "".join(target_uri.split("vmrest/")[1:])
+
+        target_uri = f"https://{self.ipaddr}:8443/vmrest/{target_uri}"
 
         headers = {'Accept': "application/json",
                    'Content-Type': "application/json"}
@@ -184,7 +182,7 @@ class Connect:
                     return False
 
                 # confirm if valid response
-                if response.status_code == 200:
+                if 200 <= response.status_code <= 300:
                     query_result = json.loads(response.text)
 
                     # if multiple results in response loop through each and add to result array
@@ -198,6 +196,10 @@ class Connect:
                                         result.append(item)
                     else:
                         result.append(query_result)
+                elif 400 <= response.status_code <= 600:
+                    print(f"\tCXN GET API Failure: {response.text} - {target_uri}", file=sys.stderr)
+                    return False
+
                 else:
                     print(f"\t{str(response)}{response.text}", file=sys.stderr)
                     return False
@@ -207,7 +209,27 @@ class Connect:
         return result
 
     # wrapper for api Gets
-    def get(self, target_endpoint, params={}):
+    def get(self, target_endpoint, params={}, DtmfAccessId=None, Alias=None, query=None, sort=None):
+        if DtmfAccessId or Alias or query:
+            if DtmfAccessId:
+                if DtmfAccessId.endswith('%') or DtmfAccessId.endswith('*'):
+                    params['query'] = f'(DtmfAccessId startswith {DtmfAccessId.replace("%", "").replace("*", "")})'
+                else:
+                    params['query'] = f'(DtmfAccessId is {DtmfAccessId})'
+            elif Alias:
+                if Alias.endswith('%') or Alias.endswith('*'):
+                    params['query'] = f'(Alias startswith {Alias.replace("%", "").replace("*", "")})'
+                else:
+                    params['query'] = f'(Alias is {Alias})'
+            elif query:
+                params['query'] = query
+
+        if sort:
+            if ' ' in sort:
+                params['sort'] = f'({sort})'
+            else:
+                params['sort'] = f'({sort} asc)'
+
         return self.cupi_api(target_endpoint, data=params)
 
     # wrapper for api PUT
