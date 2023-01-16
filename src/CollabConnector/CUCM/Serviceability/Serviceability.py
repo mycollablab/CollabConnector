@@ -8,14 +8,13 @@ import re
 requests.packages.urllib3.disable_warnings()
 
 
-class Serviceability():
+class Connect:
     app_creds = None
     version = None
     nodes = {}
     service_list = []
 
     def __init__(self, ipaddr=None, username=None, passwd=None, nodes=None):
-        print("Connecting to CM Servicability...")
         if ipaddr is None:
             print("Must declare connection info: ", file=sys.stderr)
             print("Collab.CMServiceManager(ipaddr='x.x.x.x', app_creds=('appAdmin', 'SECRET')",
@@ -28,10 +27,10 @@ class Serviceability():
                       file=sys.stderr)
             else:
                 self.app_creds = requests.auth.HTTPBasicAuth(username, passwd)
-                print("Getting node capabilities...")
+                if nodes is None:
+                    nodes = [ipaddr]
                 for node in nodes:
                     self.discover_node(node)
-        print("... Done")
 
     # discover platform components for nodes and available services and store
     def discover_node(self, ipaddr):

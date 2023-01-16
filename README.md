@@ -32,7 +32,7 @@ Usage:
 >>> unity = CUCX.Connect("10.10.10.20", "admin", "P@ssw0rd")
 >>> unity.get("users")
 [{'URI': '/vmrest/users/a151...123', 'ObjectId': 'a151...123', 'Alias': 'undeliverablemess... }]
->>> cx.get("/vmrest/users", DtmfAccessId="10*", sort="DtmfAccessId asc")
+>>> unity.get("/vmrest/users", DtmfAccessId="10*", sort="DtmfAccessId")
 [{'URI': ..., 'ObjectId': ..., 'FirstName': '', 'LastName': '', 'Alias': '1000', 'DisplayName': '1000', 'EmailAddress': '', ... }]
 
 >>> ccx = UCCX.Connect("10.10.10.40", "admin", "P@ssw0rd")

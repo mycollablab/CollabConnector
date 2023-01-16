@@ -68,7 +68,7 @@ class Connect:
             cluster = self.rest_get(f"QueryService")['QueryServiceReply']['Cluster']
         except Exception as err:
             print(f"AST ERROR: Discover_cluster: {err}", file=sys.stderr)
-            return False
+            return None
         else:
             return_cluster = {'cluster_name': cluster['@Name'], 'nodes': [], 'service_nodes': {}}
             for srv in cluster['ServiceType']:

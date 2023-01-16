@@ -7,14 +7,15 @@ import re
 import os
 import json
 import urllib
-from .AST import AST
-from .Serviceability import Serviceability
-from .DIME import DIME
+from .AST import *
+from .Serviceability import *
+from .DIME import *
 from .Logs import Logs
 from .CDR import CDR
 from . import AXL
 from . import Risport
 from . import UDS
+import socket
 
 requests.packages.urllib3.disable_warnings()
 
@@ -27,6 +28,11 @@ class Connect:
         self.axl = False
         self.risport = False
         self.auth = HTTPBasicAuth(username, passwd)
+
+        if self.open_port(ipaddr, 8443) is False:
+            raise Exception (f"Connection Error: {ipaddr}:8443 not reachable or open. Is this CUCM?")
+        if self.query("SELECT COUNT(*) FROM processnode") is False:
+            raise Exception (f"Connection Error: AXL request not valid. Improper credentials?")
 
         self.uds = UDS.Connect(ipaddr, username, passwd)
         try:
@@ -49,12 +55,28 @@ class Connect:
 
         self.ast = AST.Connect(ipaddr, username, passwd)
         self.cluster = self.ast.cluster
-        self.serviceability = Serviceability(ipaddr, username, passwd, self.cluster['nodes'])
-        self.dime = DIME(ipaddr, username, passwd)
+        if self.cluster:
+            self.serviceability = Serviceability.Connect(ipaddr, username, passwd, self.cluster['nodes'])
+        else:
+            self.serviceability = Serviceability.Connect(ipaddr, username, passwd)
+        self.dime = DIME.Connect(ipaddr, username, passwd)
         # self.logs = Logs(ipaddr, username, passwd)
         self.cdr = CDR(ipaddr, username, passwd)
 
         print("Connected.")
+
+    @staticmethod
+    def open_port(ip, port, return_object=[]):
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.settimeout(3)
+        try:
+            s.connect((ip, int(port)))
+            s.close()
+            return_object.append(str(port))
+            return port
+        except Exception as e:
+            s.close()
+            return False
 
     # Function to query SQL via AXL API to CUCM
     def query(self, sql_statement):
@@ -91,6 +113,7 @@ class Connect:
                                             verify=False)
             except Exception as err:
                 print(f"Error with AXL DB request: {err}", file=sys.stderr)
+                return False
             else:
                 # If request was good then return response values
                 if response.status_code == 200:
@@ -235,3 +258,13 @@ class Connect:
 
             return risport_list
 
+    def update_pt(self, uuid, partition):
+        try:
+            dn_return = self.update.Line(uuid=uuid, newRoutePartitionName=partition)
+
+        except Exception as err:
+            print(f"Error during DN Update: ", err)
+            return False
+
+        else:
+            return dn_return

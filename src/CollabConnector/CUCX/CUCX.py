@@ -4,6 +4,7 @@ import sys
 import os
 import re
 import urllib
+import socket
 import json
 
 requests.packages.urllib3.disable_warnings()
@@ -29,6 +30,11 @@ class Connect:
         else:
             self.username = username
             self.auth = HTTPBasicAuth(username, passwd)
+
+            if self.open_port(ipaddr, 8443) is False:
+                raise Exception(f"Connection Error: {ipaddr}:8443 not reachable or open. Is this Unity Connection?")
+            if self.get("cluster") is False:
+                raise Exception(f"Connection Error: AXL request not valid. Improper credentials?")
 
             try:
                 self.version = self.get("version")[0]['version']
@@ -59,6 +65,19 @@ class Connect:
             else:
                 self.INFORMIX = False
             print("Connected.")
+
+    @staticmethod
+    def open_port(ip, port, return_object=[]):
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.settimeout(3)
+        try:
+            s.connect((ip, int(port)))
+            s.close()
+            return_object.append(str(port))
+            return port
+        except Exception as e:
+            s.close()
+            return False
 
     # Function query SQL via direct Informix connector
     def informix_query(self, sql_statement):

@@ -5,6 +5,7 @@ import sys
 import re
 import json
 import urllib
+import socket
 
 requests.packages.urllib3.disable_warnings()
 
@@ -20,23 +21,27 @@ class Connect:
                  server_name=None
                  ):
 
-            self.system_type = "UCCX"
-            self.ipaddr = ipaddr
+        self.system_type = "UCCX"
+        self.ipaddr = ipaddr
 
-            # if type= cucm then set username/password for AXL connection
-            if ipaddr is  None or passwd is None or username is None:
-                print(f'Usage: CollabConnector.UCCX.Connect("ipaddr", "admin", "password", db=False)',
-                      file=sys.stderr)
-            else:
-                self.username = username
-                self.auth = HTTPBasicAuth(username, passwd)
+        # if type= cucm then set username/password for AXL connection
+        if ipaddr is None or passwd is None or username is None:
+            raise Exception(f'Usage: CollabConnector.UCCX.Connect("ipaddr", "admin", "password", db=False)')
+        else:
+            self.username = username
+            self.auth = HTTPBasicAuth(username, passwd)
 
-                # if type = uccx-db then set the informixConnection variable for the connector
-                if db:
-                    try:
-                        import IfxPy
-                    except:
-                        print("""
+            if self.open_port(ipaddr, 8443) is False:
+                raise Exception(f"Connection Error: {ipaddr}:8443 not reachable or open. Is this UCCX?")
+            if self.get("applications") is False:
+                raise Exception(f"Connection Error: API request not valid. Improper credentials?")
+
+            # if type = uccx-db then set the informixConnection variable for the connector
+            if db:
+                try:
+                    import IfxPy
+                except:
+                    print("""
                             IfxPy module failed to load. If you intend to connect to an Informix DB check the linux enviroment
                             << pip3 install IfxPy >>
                             export INFORMIXDIR=/opt/IBM/Informix_Client-SDK/  
@@ -44,19 +49,32 @@ class Connect:
                             export LIBPATH=${INFORMIXDIR}/lib:${INFORMIXDIR}/lib/cli:${INFORMIXDIR}/lib/esql:${INFORMIXDIR}/lib:${INFORMIXDIR}/bin:${INFORMIXDIR}/etc:${LIBPATH}
                             export LD_LIBRARY_PATH=$INFORMIXDIR/lib:$INFORMIXDIR/lib/cli:$INFORMIXDIR/lib/esql
                             """, file=sys.stderr)
+                    self.INFORMIX = False
+                else:
+                    connection_string = f"SERVER={server_name};DATABASE=db_cra;HOST={ipaddr};SERVICE=5104;UID=uccxhruser;PWD={passwd};DB_LOCALE=en_US.utf8;"
+                    try:
+                        self.informixConnector = IfxPy.connect(connection_string, "", "")
+                    except Exception as err:
+                        print(f'INFORMIX connection failed. {err}', file=sys.stderr)
                         self.INFORMIX = False
                     else:
-                        connection_string = f"SERVER={server_name};DATABASE=db_cra;HOST={ipaddr};SERVICE=5104;UID=uccxhruser;PWD={passwd};DB_LOCALE=en_US.utf8;"
-                        try:
-                            self.informixConnector = IfxPy.connect(connection_string, "", "")
-                        except Exception as err:
-                            print(f'INFORMIX connection failed. {err}', file=sys.stderr)
-                            self.INFORMIX = False
-                        else:
-                            self.INFORMIX = True
-                else:
-                    self.INFORMIX = False
-                    print("Informix Drivers not correctly initialized.  Try again or use the API", file=sys.stderr)
+                        self.INFORMIX = True
+            else:
+                self.INFORMIX = False
+                print("Informix Drivers not correctly initialized.  Try again or use the API", file=sys.stderr)
+
+    @staticmethod
+    def open_port(ip, port, return_object=[]):
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.settimeout(3)
+        try:
+            s.connect((ip, int(port)))
+            s.close()
+            return_object.append(str(port))
+            return port
+        except Exception as e:
+            s.close()
+            return False
 
     # Function query SQL via direct Informix connector
     def informix_query(self, sql_statement):

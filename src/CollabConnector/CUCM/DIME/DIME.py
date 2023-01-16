@@ -5,7 +5,7 @@ from requests.auth import HTTPBasicAuth
 import sys
 
 
-class DIME():
+class Connect():
     class ProgressBar():
         progress_bar_scale = .7
         progress_bar_length = int(100 * progress_bar_scale)
