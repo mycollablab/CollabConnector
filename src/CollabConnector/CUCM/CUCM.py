@@ -18,6 +18,12 @@ from . import UDS
 import socket
 
 requests.packages.urllib3.disable_warnings()
+requests.packages.urllib3.util.ssl_.DEFAULT_CIPHERS += ':HIGH:!DH:!aNULL'
+try:
+    requests.packages.urllib3.contrib.pyopenssl.util.ssl_.DEFAULT_CIPHERS += ':HIGH:!DH:!aNULL'
+except AttributeError:
+    # no pyopenssl support used / needed / available
+    pass
 
 
 class Connect:
@@ -34,8 +40,8 @@ class Connect:
         if self.query("SELECT COUNT(*) FROM processnode") is False:
             raise Exception (f"Connection Error: AXL request not valid. Improper credentials?")
 
-        self.uds = UDS.Connect(ipaddr, username, passwd)
         try:
+            self.uds = UDS.Connect(ipaddr, username, passwd)
             self.version = self.uds.get("version")['@version']
         except Exception as err:
             print(f"Could not determine CUCM version via UDS: {err}")
@@ -59,7 +65,12 @@ class Connect:
             self.serviceability = Serviceability.Connect(ipaddr, username, passwd, self.cluster['nodes'])
         else:
             self.serviceability = Serviceability.Connect(ipaddr, username, passwd)
-        self.dime = DIME.Connect(ipaddr, username, passwd)
+
+        try:
+            self.dime = DIME.Connect(ipaddr, username, passwd)
+        except Exception as err:
+            print(f"Could not connect to DIME: {err}")
+
         # self.logs = Logs(ipaddr, username, passwd)
         self.cdr = CDR(ipaddr, username, passwd)
 
