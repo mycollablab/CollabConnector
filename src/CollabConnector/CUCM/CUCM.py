@@ -54,10 +54,14 @@ class Connect:
         risport = Risport.Connect(ipaddr, username, passwd)
         self.risport = risport.client
 
-        axl = AXL.Connect(ipaddr, username, passwd, '.'.join(self.version.split('.')[0:2]))
-        self.axl_client = axl.axl_client
-        self.axl_service = axl.axl_service
-        self.axl = axl
+        try:
+            axl = AXL.Connect(ipaddr, username, passwd, '.'.join(self.version.split('.')[0:2]))
+        except Exception as err:
+            print(f"Could not connect to AXL service: {err}")
+        else:
+            self.axl_client = axl.axl_client
+            self.axl_service = axl.axl_service
+            self.axl = axl
 
         self.ast = AST.Connect(ipaddr, username, passwd)
 
@@ -171,7 +175,7 @@ class Connect:
                         return []
 
                 elif re.search("Query request too large. Total rows matched: ", response.text):
-                    row_info = re.sub("[^\d:]", '',
+                    row_info = re.sub("[^0-9:]", '',
                                       xmltodict.parse(response.text, dict_constructor=dict)['soapenv:Envelope'][
                                           'soapenv:Body']['soapenv:Fault']['faultstring']).split(":")
                     print(f"Multiple queries needed for {row_info[1]} rows.")
