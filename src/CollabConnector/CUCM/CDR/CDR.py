@@ -1,7 +1,11 @@
 import sqlite3
 import sys
-import pandas as pd
 from .CDROnDemand import *
+try:
+    import pandas as pd
+except:
+    print("Error importing Pandas for CDR", file=sys.stderr)
+    print("<< pip3 install pandas >>", file=sys.stderr)
 
 
 class CDR:
@@ -186,7 +190,7 @@ class CDR:
         sql_cdr = f"""CREATE TABLE {self._TABLE_NAME}(
 					cdrRecordType INTEGER NULL,
 					globalCallID_callManagerId INTEGER NULL,
-					globalCallID_callId INTEGER NULL,
+					globalCallID_callId INTEGER PRIMARY KEY,
 					origLegCallIdentifier INTEGER NULL,
 					dateTimeOrigination INTEGER NULL,
 					origNodeId INTEGER NULL,
@@ -321,7 +325,7 @@ class CDR:
         sql_cmr = f"""CREATE TABLE {self._TABLE_CMR} (
 						cdrRecordType INTEGER ,
 						globalCallID_callManagerId INTEGER ,
-						globalCallId_callId INTEGER ,
+						globalCallId_callId INTEGER PRIMARY KEY,
 						nodeId INTEGER ,
 						directoryNumber INTEGER ,
 						callIdentifier INTEGER ,
@@ -369,9 +373,11 @@ class CDR:
         print("Building SQLite DB from CSV...")
         try:
             _cdr_db.execute(sql_cdr)
-
         except Exception as err:
             print(err, file=sys.stderr)
+        else:
+            sql_index = "CREATE INDEX cdr_index ON cdr_cdr(dateTimeOrigination, callingPartyNumber, destDeviceName, finalCalledPartyNumber, finalCalledPartyPattern, origDeviceName, originalCalledPartyNumber, originalCalledPartyPattern)"
+            _cdr_db.execute(sql_index)
 
         try:
             _cdr_db.execute(sql_cmr)

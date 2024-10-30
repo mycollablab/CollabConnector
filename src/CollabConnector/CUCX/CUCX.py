@@ -8,9 +8,9 @@ import socket
 import json
 
 requests.packages.urllib3.disable_warnings()
-requests.packages.urllib3.util.ssl_.DEFAULT_CIPHERS += ':HIGH:!DH:!aNULL'
 try:
     requests.packages.urllib3.contrib.pyopenssl.util.ssl_.DEFAULT_CIPHERS += ':HIGH:!DH:!aNULL'
+    requests.packages.urllib3.util.ssl_.DEFAULT_CIPHERS += ':HIGH:!DH:!aNULL'
 except AttributeError:
     # no pyopenssl support used / needed / available
     pass
@@ -39,7 +39,7 @@ class Connect:
             if self.open_port(ipaddr, 8443) is False:
                 raise Exception(f"Connection Error: {ipaddr}:8443 not reachable or open. Is this Unity Connection?")
             if self.get("cluster") is False:
-                raise Exception(f"Connection Error: AXL request not valid. Improper credentials?")
+                print(f"Connection Error: AXL request not valid. Improper credentials?", file=sys.stderr)
 
             try:
                 self.version = self.get("version")[0]['version']
@@ -136,7 +136,7 @@ class Connect:
         return result
 
     # REST Wrapper for Unity
-    def cupi_api(self, target_uri, method='GET', data={}, paging=True):
+    def cupi_api(self, target_uri, method='GET', data={}, paging=True, debug=False):
         # build URL based on URI in funcion call
         if target_uri.find("vmrest/") > -1:
             target_uri = "".join(target_uri.split("vmrest/")[1:])
@@ -154,6 +154,9 @@ class Connect:
                 print(f"CXN API {method} Failure: {err} - {target_uri}", file=sys.stderr)
                 return False
             else:
+                if debug:
+                    print(f"{method}:{target_uri} - {response.status_code}")
+                    print(f"\t{response.text}")
                 result = [response.text]
         else:
             #  Add parameters to uri if needed
@@ -204,6 +207,8 @@ class Connect:
                 except Exception as err:
                     print(f"\tCXN GET API Failure: {err} - {target_uri}", file=sys.stderr)
                     return False
+                if debug:
+                    print(f"GET:{target_uri} - {response.status_code}")
 
                 # confirm if valid response
                 if 200 <= response.status_code <= 300:
@@ -233,7 +238,7 @@ class Connect:
         return result
 
     # wrapper for api Gets
-    def get(self, target_endpoint, params={}, DtmfAccessId=None, Alias=None, query=None, sort=None):
+    def get(self, target_endpoint, params={}, DtmfAccessId=None, Alias=None, query=None, sort=None, debug=False):
         if DtmfAccessId or Alias or query:
             if DtmfAccessId:
                 if DtmfAccessId.endswith('%') or DtmfAccessId.endswith('*'):
@@ -254,21 +259,21 @@ class Connect:
             else:
                 params['sort'] = f'({sort} asc)'
 
-        return self.cupi_api(target_endpoint, data=params)
+        return self.cupi_api(target_endpoint, data=params, debug=debug)
 
     # wrapper for api PUT
-    def put(self, target_endpoint, put_data):
-        return self.cupi_api(target_endpoint, method='PUT', data=put_data)
+    def put(self, target_endpoint, put_data, debug=False):
+        return self.cupi_api(target_endpoint, method='PUT', data=put_data, debug=debug)
 
     # wrapper for api POST
-    def post(self, target_endpoint, post_data):
-        return self.cupi_api(target_endpoint, method='POST', data=post_data)
+    def post(self, target_endpoint, post_data, debug=False):
+        return self.cupi_api(target_endpoint, method='POST', data=post_data, debug=debug)
 
     # wrapper for api DELETE
-    def delete(self, target_endpoint):
-        return self.cupi_api(target_endpoint, method='DELETE')
+    def delete(self, target_endpoint, debug=False):
+        return self.cupi_api(target_endpoint, method='DELETE', debug=debug)
 
-    def get_prompt(self, greeting_stream_file_uri, filename="greeting.wav"):
+    def get_prompt(self, greeting_stream_file_uri, filename="greeting.wav", debug=False):
         try:
             folder = greeting_stream_file_uri.split("/")[4]
             try:
@@ -290,7 +295,7 @@ class Connect:
         else:
             return filename
 
-    def get_all_prompts(self, search):
+    def get_all_prompts(self, search, debug=False):
         print(f"Searching for User extension {search}")
         users = self.cupi_api(f"users?query=(%20DtmfAccessId%20is%20{search}%20)")
         if users and len(users) == 0:

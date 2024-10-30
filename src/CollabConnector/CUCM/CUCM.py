@@ -12,15 +12,16 @@ from .Serviceability import *
 from .DIME import *
 from .Logs import Logs
 from .CDR import CDR
+from .TFTP import *
 from . import AXL
 from . import Risport
 from . import UDS
 import socket
 
 requests.packages.urllib3.disable_warnings()
-requests.packages.urllib3.util.ssl_.DEFAULT_CIPHERS += ':HIGH:!DH:!aNULL'
 try:
     requests.packages.urllib3.contrib.pyopenssl.util.ssl_.DEFAULT_CIPHERS += ':HIGH:!DH:!aNULL'
+    requests.packages.urllib3.util.ssl_.DEFAULT_CIPHERS += ':HIGH:!DH:!aNULL'
 except AttributeError:
     # no pyopenssl support used / needed / available
     pass
@@ -32,13 +33,11 @@ class Connect:
         self.system_type = "cucm"
         self.ipaddr = ipaddr
         self.axl = False
+        self.tftp = []
+        self.itl = {"md5": [], "sha1": [], "sha512": []}
+        self.ast = None
         self.risport = False
         self.auth = HTTPBasicAuth(username, passwd)
-
-        if self.open_port(ipaddr, 8443) is False:
-            raise Exception (f"Connection Error: {ipaddr}:8443 not reachable or open. Is this CUCM?")
-        if self.query("SELECT COUNT(*) FROM processnode") is False:
-            raise Exception (f"Connection Error: AXL request not valid. Improper credentials?")
 
         try:
             self.uds = UDS.Connect(ipaddr, username, passwd)
@@ -47,19 +46,25 @@ class Connect:
             print(f"Could not determine CUCM version via UDS: {err}")
             self.version = False
 
+        if self.open_port(ipaddr, 8443) is False:
+            raise Exception (f"Connection Error: {ipaddr}:8443 not reachable or open. Is this CUCM?")
+        if self.query("SELECT COUNT(*) FROM processnode") is False:
+            raise Exception (f"Connection Error: AXL request not valid. Improper credentials?")
+
         risport = Risport.Connect(ipaddr, username, passwd)
         self.risport = risport.client
 
         axl = AXL.Connect(ipaddr, username, passwd, '.'.join(self.version.split('.')[0:2]))
-        self.axl = axl.client
-        self.add = AXL.Add(self.axl)
-        self.do = AXL.Do(self.axl)
-        self.get = AXL.Get(self.axl)
-        self.list = AXL.List(self.axl)
-        self.remove = AXL.Remove(self.axl)
-        self.update = AXL.Update(self.axl)
+        self.axl_client = axl.axl_client
+        self.axl_service = axl.axl_service
+        self.axl = axl
 
         self.ast = AST.Connect(ipaddr, username, passwd)
+
+        itl_lookup_device = self.query("SELECT LIMIT 1 name FROM device WHERE name LIKE 'SEP%'")
+        for tftp in self.ast.get_tftp_info(simple=True):
+            self.tftp.append(TFTP.Connect(tftp, itl_lookup_device[0]['name']))
+
         self.cluster = self.ast.cluster
         if self.cluster:
             self.serviceability = Serviceability.Connect(ipaddr, username, passwd, self.cluster['nodes'])
@@ -76,6 +81,17 @@ class Connect:
 
         print("Connected.")
 
+    def itl_signatures(self, renew:bool = False):
+        if self.itl['md5'] and renew is False:
+            return self.itl
+
+        for node in self.tftp:
+            self.itl['md5'].append(node.itl_signature()['md5'])
+            self.itl['sha1'].append(node.itl_signature()['sha1'])
+            self.itl['sha512'].append(node.itl_signature()['sha512'])
+
+        return self.itl
+
     @staticmethod
     def open_port(ip, port, return_object=[]):
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -91,6 +107,10 @@ class Connect:
 
     # Function to query SQL via AXL API to CUCM
     def query(self, sql_statement):
+        if self.version:
+            version = self.version
+        else:
+            version = "8.5"
         result_dict = []
         row_info = ["", None, None]
         newsql_statement = sql_statement
@@ -105,7 +125,7 @@ class Connect:
                                           f"SELECT SKIP {len(result_dict)} LIMIT {row_info[2]} ", sql_statement)
 
             payload = f"""<?xml version=\"1.0\" encoding=\"UTF-8\"?>
-                            <soapenv:Envelope xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\" xmlns:ns=\"http://www.cisco.com/AXL/API/10.5\">
+                            <soapenv:Envelope xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\" xmlns:ns=\"http://www.cisco.com/AXL/API/{'.'.join(version.split(".")[0:2])}\">
                               <soapenv:Header/>
                               <soapenv:Body>
                                 <ns:{execute_sql}>

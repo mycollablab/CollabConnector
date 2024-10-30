@@ -1,17 +1,20 @@
+import urllib
 from urllib.request import urlopen
 import xmltodict
 import requests
 import re
 import sys
+import hashlib
 import ssl
 import time
 import html
 import os
+from ..TFTP import *
 
 requests.packages.urllib3.disable_warnings()
-requests.packages.urllib3.util.ssl_.DEFAULT_CIPHERS += ':HIGH:!DH:!aNULL'
 try:
     requests.packages.urllib3.contrib.pyopenssl.util.ssl_.DEFAULT_CIPHERS += ':HIGH:!DH:!aNULL'
+    requests.packages.urllib3.util.ssl_.DEFAULT_CIPHERS += ':HIGH:!DH:!aNULL'
 except AttributeError:
     # no pyopenssl support used / needed / available
     pass
@@ -21,6 +24,7 @@ class Connect():
     device_html = None
     network_html = None
     port_html = None
+    tftp_xml = None
     ip = None
     _username = None
     _dn = None
@@ -58,8 +62,10 @@ class Connect():
     _cdp_neighbor = None
     _stream = None
     _tvs = None
+    _config = {}
+    _hardware = None
 
-    def __init__(self, ip_addr, username=None, passwd=None):
+    def __init__(self, ip_addr, username=None, passwd=None, tftp_config=False):
         self.ip = ip_addr
         if username is not None: self._username = username
         if passwd is not None: self._passwd = passwd
@@ -82,6 +88,47 @@ class Connect():
             except Exception as err2:
                 print(f"{ip_addr} - Unable to connect to phone Web Page. Check that its enabled: {err1} - {err2}",
                       file=sys.stderr)
+        else:
+            if tftp_config:
+                self.config()
+
+    def validate_itl(self, fingerprints=None) -> bool:
+        self.tftp()
+        if not  fingerprints:
+            fingerprints = []
+            for node in self._tftp:
+                fingerprints.extend(node.itl_signature(self.name(), flatten=True))
+
+        if self.itl() in fingerprints:
+            return True
+        else:
+            return False
+
+    def config(self, signed: bool = False, renew: bool = False):
+        self.tftp()
+        if self._config and renew is False:
+            return self._config
+
+        config = b''
+        i = 0
+        while not config and i < len(self._tftp):
+            try:
+                if signed:
+                    config = self._tftp[i].download(f"{self.name()}.cnf.xml.sgn")
+                else:
+                    config = self._tftp[i].download(f"{self.name()}.cnf.xml")
+
+            except Exception as err:
+                print(f"Error: Could not download or parse Phone Config from UCM: {err}", file=sys.stderr)
+
+            i += 1
+
+        if config:
+            self._config = xmltodict.parse(config)
+            self._config['raw'] = config
+            return self._config
+        else:
+            return {}
 
     def details(self):
         result = {}
@@ -91,6 +138,7 @@ class Connect():
         result['name'] = self.name()
         result['dn'] = self.dn()
         result['model'] = self.model()
+        result['hardware'] = self.hardware()
         result['mwi'] = self.mwi()
         result['timezone'] = self.timezone()
         result['dhcpserver'] = self.dhcpserver()
@@ -412,6 +460,12 @@ class Connect():
 
         return self._name
 
+    def hardware(self):
+        if self._hardware is None:
+            self._hardware = self.scrape_html_data(self.device_html, "Hardware Revision")
+
+        return self._hardware
+
     def model(self):
         if self._model is None:
             self._model = self.scrape_html_data(self.device_html, "Model Number")
@@ -508,10 +562,11 @@ class Connect():
         return self._cm_list
 
     def tftp(self):
-        if self._tftp[0] is None:
+        if self._tftp:
             x = 1
             while x <= len(self._tftp):
-                self._tftp[x - 1] = self.scrape_html_data(self.network_html, f"TFTP Server {x}")
+                tftp_ip = self.scrape_html_data(self.network_html, f"TFTP Server {x}")
+                self._tftp[x-1] = TFTP.Connect(tftp_ip)
                 if self._tftp[x - 1] == '':
                     self._tftp[x - 1] = None
                 x += 1
@@ -595,15 +650,13 @@ class Connect():
 
     def itl(self):
         if self._itl is None:
-            self._itl = [self.scrape_html_data(self.network_html, "ITL file<"),
-                         self.scrape_html_data(self.network_html, "ITL signature<")]
+            self._itl = self.scrape_html_data(self.network_html, "ITL signature<")
 
         return self._itl
 
     def ctl(self):
         if self._ctl is None:
-            self._ctl = [self.scrape_html_data(self.network_html, "CTL file<"),
-                         self.scrape_html_data(self.network_html, "CTL signature<")]
+            self._ctl = self.scrape_html_data(self.network_html, "CTL signature<")
 
         return self._ctl
 
@@ -669,12 +722,13 @@ class Connect():
 
         html = html[
                html.find('<td VALIGN=top><DIV ALIGN=center>\n<TABLE BORDER="0" CELLSPACING="10" CELLPADDING="0">'):]
-        html = re.sub("<[^>]*>", "\n", html).split('\n')
+        html = html.split("<TR>")
+        # html = re.sub("<[^>]*>", "\n", html).split('\n')
 
         logs = []
         for line in html:
-            if not line == '':
-                logs.append(line)
+            if "<B>" in line:
+                logs.append(urllib.parse.unquote(line.replace("&#x2F;", "/"), encoding='utf-8', errors='replace').split("<B>")[1].split("</B>")[0].split("\n"))
 
         return logs
 
@@ -699,6 +753,19 @@ class Connect():
             logs.append([log_date, xmltodict.parse(html[:xml_length], dict_constructor=dict)])
 
             html = html[xml_length:]
+
+        if len(logs) == 0:
+            html = html[
+                   html.find('<td VALIGN=top><DIV ALIGN=center>\n<TABLE BORDER="0" CELLSPACING="10" CELLPADDING="0">'):]
+            html = html.split("<TR>")
+            # html = re.sub("<[^>]*>", "\n", html).split('\n')
+
+            logs = []
+            for line in html:
+                if "<B>" in line:
+                    logs.append(
+                        urllib.parse.unquote(line.replace("&#x2F;", "/").replace("&#x3D;", "=").replace("&#x2D;0", "-"), encoding='utf-8', errors='replace').split(
+                            "<B>")[1].split("</B>")[0].split("\n"))
 
         return logs
 

@@ -4,6 +4,8 @@ import time
 import getpass
 import re
 import io
+import openpyxl
+import copy
 
 try:
     import netmiko
@@ -56,8 +58,7 @@ class Connect:
             self.netmiko.disable_paging(command='terminal length 0', delay_factor=1, cmd_verify=True, pattern=None)
 
         except Exception as err:
-            print(f"Cannot connect to this device: {err}", file=sys.stderr)
-            self = False
+            raise Exception(f"Cannot connect to this device: {err}")
 
         else:
             self.status = True
@@ -69,6 +70,14 @@ class Connect:
             keepalive.start()  # start keepalives
 
         self.parse_config()
+        self.config_sections = [""]
+        i = 0
+        while i < len(self.config):
+            if self.config[i] != "!":
+                self.config_sections[-1] += f"{self.config[i]}\n"
+            i += 1
+            if i < len(self.config) and re.match("^[^\s].*", self.config[i]):
+                self.config_sections.append("")
         self.parse_version()
         self.parse_dialpeers()
         self.parse_serialnumber()
@@ -390,28 +399,15 @@ class Connect:
             print("Error: IOS.section must be given a text file via string, file or list", file=sys.stderr)
             return []
 
-    def section(self, search, file=None):
-        if file is None:
-            file_lines = self.config
+    def section(self, search, return_type: type = list):
+        output = []
+        for section in self.config_sections:
+            if search in section:
+                output.append(section.strip())
+        if return_type == str:
+            return "\n".join(output)
         else:
-            file_lines = self.fix_file_format(file)
-        return_string = ""
-        i = 0
-        while i < len(file_lines):
-            found = False
-            this_section = [file_lines[i]]
-            i += 1
-            if this_section[-1].lower().find(search.lower()) > -1:
-                found = True
-            while i < len(file_lines) and file_lines[i].find(" ") == 0:
-                this_section.append(file_lines[i])
-                if this_section[-1].lower().find(search.lower()) > -1:
-                    found = True
-                i += 1
-            if found:
-                return_string += "\n".join(this_section)
-                return_string += "\n!\n"
-        return return_string
+            return output
 
     def include(self, search, file=None):
         if file is None:
@@ -427,28 +423,37 @@ class Connect:
 
     def parse_dialpeers(self, config=None):
         if config:
-            config = self.fix_file_format(config)
+            dialpeer_config = self.fix_file_format(config)
         else:
             if len(self.dialpeers) == 0:
-                config = self.fix_file_format(self.section("dial-peer voice"))
+                dialpeer_config = copy.deepcopy(self.section("dial-peer voice"))
 
         i = 0
-        while i < len(config):
-            if "dial-peer voice" in config[i]:
-                dialpeer = {'tag': config[i].strip().split(" ")[-2], 'type': "", 'status': 'active', 'description': '',
-                            'destination': '',
-                            'incoming': '', 'target': '', 'source': '', 'preference': "0", 'translation_incoming': "",
+        for dialpeer in dialpeer_config:
+            config = dialpeer.split('\n')
+            i = 0
+            while i < len(config):
+                dialpeer = {'tag': config[i].strip().split(" ")[-2],
+                            'type': "voip" if "voip" in config[i] else "pots",
+                            'status': 'active',
+                            'description': '',
+                            'destination': '', 'pattern-map dest': "", 'incoming': '', 'target': '',
+                            'server-group dest': "", 'source': '', 'preference': "0", 'translation_incoming': "",
                             'translation_outgoing': "", 'call-block': "", 'codec': "codec g711ulaw", 'dtmf-relay': "",
                             'protocol': "H.323", 'huntstop': "disabled", 'vad': "enabled", 'fax-protocol': "",
-                            'fax-rate': "", "sip_profile": ""}
-                while i < len(config) and config[i+1] != "!":
-                    i += 1
+                            'fax-rate': "", "sip_profile": "", "config": dialpeer}
+
+                i += 1
+                while i < len(config):
                     if "description" in config[i]:
                         dialpeer['description'] = config[i].replace(" description ", "")
                     elif "pots" in config[i]:
                         dialpeer['protocol'] = "pots"
                     elif "destination" in config[i]:
                         dialpeer['destination'] = " ".join(config[i].split(" ")[2:])
+                        if 'e164-pattern-map' in dialpeer['destination']:
+                            dialpeer['pattern-map dest'] = self.section(f"voice class {dialpeer['destination']}\n",
+                                                                        return_type=str)
                     elif "incoming called-number" in config[i]:
                         dialpeer['incoming'] = " ".join(config[i].split(" ")[3:])
                     elif "incoming uri" in config[i]:
@@ -457,6 +462,9 @@ class Connect:
                         dialpeer['incoming'] = config[i].strip()
                     elif "session target" in config[i] or 'server-group' in config[i]:
                         dialpeer['target'] = " ".join(config[i].split(" ")[2:]).replace("target ", "")
+                        if "server-group" in dialpeer['target']:
+                            dialpeer['server-group dest'] = self.section(f"voice class {dialpeer['target']}\n",
+                                                                         return_type=str)
                     elif "shutdown" in config[i]:
                         dialpeer['status'] = 'shutdown'
                     elif 'port' in config[i] or 'trunk-group' in config[i]:
@@ -484,9 +492,52 @@ class Connect:
                     elif ' fax protocol' in config[i]:
                         dialpeer['fax-protocol'] = config[i].replace(" fax protocol ", "")
                     elif ' fax rate' in config[i]:
-                        dialpeer['fax-rate'] = config[i].replace(' fax rate ')
+                        dialpeer['fax-rate'] = config[i].replace(' fax rate ', '')
                     elif ' voice-class sip profile' in config[i]:
                         dialpeer['sip_profile'] = config[i].strip().split(" ")[-1]
+                    i += 1
 
-                self.dialpeers[dialpeer['tag']] = dialpeer
+            self.dialpeers[dialpeer['tag']] = dialpeer
             i += 1
+
+    @staticmethod
+    def export(data, destination=None, export_type="XLSX"):
+        export_data = []
+        if isinstance(data, dict):
+            for item in data:
+                export_data.append(data[item])
+        elif isinstance(data, list):
+            export_data = data
+
+        export_keys = list(export_data[0].keys())
+        if export_type.upper() == "CSV":
+            export_file = f'{",".join(export_keys)}\n'
+            for line in export_data:
+                export_line = ""
+                for field in line:
+                    export_line += f"{line[field]},"
+                export_file += f'{export_line[:-1]}\n'
+
+            if destination:
+                with open(destination, "w") as file:
+                    file.write(export_file)
+            else:
+                return export_file
+        elif export_type.upper() == "XLSX" and destination:
+            wb = openpyxl.Workbook()
+            wb.save(destination)
+            ws = wb.active
+
+            ws.append(export_keys)
+            r = 2
+            for line in export_data:
+                c = 1
+                for cell in line:
+                    ws.cell(r, c, str(line[cell]))
+                    c += 1
+                r += 1
+            ws.auto_filter.ref = ws.dimensions
+            ws.freeze_panes = ws['B2']
+            wb.save(destination)
+        else:
+            return export_data

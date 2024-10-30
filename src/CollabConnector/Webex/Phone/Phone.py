@@ -7,7 +7,13 @@ import time
 class CallControl():
     access_token = None
 
-    def __init__(self, access_token=None):
+    def __init__(self,
+                 access_token: str = None,
+                 org_id: str = None,
+                 refresh_token: str = None,
+                 client_id: str = None,
+                 client_secret: str = None
+                 ):
         if access_token is None:
             raise Exception("Must specify access token!")
         else:

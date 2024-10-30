@@ -5,8 +5,8 @@ import xmltodict
 import urllib
 
 requests.packages.urllib3.disable_warnings()
-requests.packages.urllib3.util.ssl_.DEFAULT_CIPHERS += ':HIGH:!DH:!aNULL'
 try:
+    requests.packages.urllib3.util.ssl_.DEFAULT_CIPHERS += ':HIGH:!DH:!aNULL'
     requests.packages.urllib3.contrib.pyopenssl.util.ssl_.DEFAULT_CIPHERS += ':HIGH:!DH:!aNULL'
 except AttributeError:
     # no pyopenssl support used / needed / available
@@ -57,7 +57,7 @@ class Connect:
             return False
 
         else:
-            if 200 <= response.status_code == 300:
+            if 200 <= response.status_code < 300:
                 # Attempt to parse XML to dict
                 try:
                     result = xmltodict.parse(response.text, dict_constructor=dict)
@@ -199,14 +199,20 @@ class Connect:
         else:
             return ast_response
 
-    def get_tftp_info(self):
+    def get_tftp_info(self, simple:bool = False):
         try:
             ast_response = self.rest_get("GetPreCannedInfo&Items=getTftpInfoRequest")['PreCannedReplies']['getTftpInfoReply']
         except Exception as err:
             print(f"AST ERROR: get_tftp_info", file=sys.stderr)
             return False
         else:
-            return ast_response
+            if simple:
+                return_list = []
+                for tftp in ast_response['TftpNode']:
+                    return_list.append(tftp['@Name'])
+                return return_list
+            else:
+                return ast_response
 
     def get_registered_device(self, params={}):
         try:
