@@ -208,8 +208,11 @@ class Connect:
         else:
             if simple:
                 return_list = []
-                for tftp in ast_response['TftpNode']:
-                    return_list.append(tftp['@Name'])
+                if isinstance(ast_response['TftpNode'], dict):
+                    return_list.append(ast_response['TftpNode']['@Name'])
+                else:
+                    for tftp in ast_response['TftpNode']:
+                        return_list.append(tftp['@Name'])
                 return return_list
             else:
                 return ast_response

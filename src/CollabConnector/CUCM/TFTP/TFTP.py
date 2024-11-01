@@ -9,6 +9,7 @@ class Connect:
 
     def __init__(self, ip_address, itl_lookup_device: str = None):
         self.ip_address = ip_address
+        self._itl_signature = {}
         if itl_lookup_device:
             itl = self.itl_signature(itl_lookup_device)
 

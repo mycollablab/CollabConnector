@@ -562,16 +562,18 @@ class Connect():
         return self._cm_list
 
     def tftp(self):
+        ip_list = []
         if self._tftp:
             x = 1
             while x <= len(self._tftp):
                 tftp_ip = self.scrape_html_data(self.network_html, f"TFTP Server {x}")
                 self._tftp[x-1] = TFTP.Connect(tftp_ip)
+                ip_list.append(tftp_ip)
                 if self._tftp[x - 1] == '':
                     self._tftp[x - 1] = None
                 x += 1
 
-        return self._tftp
+        return ip_list
 
     def voice_vlan(self):
         if self._voice_vlan is None:
