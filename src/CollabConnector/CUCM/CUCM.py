@@ -67,7 +67,10 @@ class Connect:
 
         itl_lookup_device = self.query("SELECT LIMIT 1 name FROM device WHERE name LIKE 'SEP%'")
         for tftp in self.ast.get_tftp_info(simple=True):
-            self.tftp.append(TFTP.Connect(tftp, itl_lookup_device[0]['name']))
+            try:
+                self.tftp.append(TFTP.Connect(tftp, itl_lookup_device[0]['name']))
+            except:
+                pass
 
         self.cluster = self.ast.cluster
         if self.cluster:

@@ -193,48 +193,58 @@ class Connect:
         uri = f"{self.service_url}/{uri.strip('/')}{data}"
         return_values = {'items': []}
         # Loop while true to handled paged results and throttling
+        error_loop = 3
         while True:
             try:
                 # send request to Webex
                 response = requests.get(uri, headers=self.headers(), verify=False)
 
             except Exception as err:
-                raise Exception(f"Error sending Webex REST GET - {uri} {err}")
+                if error_loop <= 0:
+                    error_loop -= 1
+                    raise Exception(f"Error sending Webex REST GET - {uri} {err}")
+                pass
 
             else:
+                error_loop = 3  # reset error loop counter
+
                 if self.debug or debug:
                     print("GET", uri, response.status_code, response.headers)
                 if 200 <= response.status_code <= 300 and response.json():
                     # create or add to return dict
                     response_data = response.json()
-                    if isinstance(response_data, dict) and len(response_data) == 1:
-                        key = list(response_data.keys())[0]
-                        response_data['items'] = response_data[key]
-                    if not isinstance(response_data, dict) or not isinstance(response_data, list):
-                        return response_data
-                    if 'items' in response_data:
+                    # if isinstance(response_data, dict) and len(response_data) == 1:
+                    #     key = list(response_data.keys())[0]
+                    #     response_data['items'] = response_data[key]
+                    # if not isinstance(response_data, dict) or not isinstance(response_data, list):
+                    #     return response_data
+                    if isinstance(response_data, dict) and 'items' in response_data.keys():
                         return_values['items'].extend(response_data['items'])
                     else:
                         return response_data
 
                     # check for additional and loop until max (limit minimum is 50)
-                    if len(return_values['items']) >= limit or self.find_next_page(response) is False:
-                        key_list = []
-                        for item in return_values['items']:
-                            for key in item:
-                                if key not in key_list:
-                                    key_list.append(key)
-                        full_return = []
-                        for item in return_values['items']:
-                            full_return.append(OrderedDict())
-                            for key in key_list:
-                                if key not in item.keys():
-                                    full_return[-1][key] = None
-                                else:
-                                    full_return[-1][key] = item[key]
-                        return full_return
-                    else:
+                    if len(return_values['items']) >= limit:
+                        return return_values
+
+                    if self.find_next_page(response):
+                        # key_list = []
+                        # for item in return_values['items']:
+                        #     for key in item:
+                        #         if key not in key_list:
+                        #             key_list.append(key)
+                        # full_return = []
+                        # for item in return_values['items']:
+                        #     full_return.append(OrderedDict())
+                        #     for key in key_list:
+                        #         if key not in item.keys():
+                        #             full_return[-1][key] = None
+                        #         else:
+                        #             full_return[-1][key] = item[key]
                         uri = self.find_next_page(response)
+                    else:
+                        return return_values
+
                 elif 200 <= response.status_code < 300:
                     return True
                 elif response.status_code == 429:  # handle throttling

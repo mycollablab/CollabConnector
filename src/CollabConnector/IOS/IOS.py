@@ -108,7 +108,7 @@ class Connect:
                 if re.search("^sh", command):
                     try:
                         command_out = self.netmiko.send_command(command, cmd_verify=True,
-                                                                strip_prompt=False).splitlines()  # .splitlines() to plit lines into list
+                                                                strip_prompt=False, read_timeout=90.0).splitlines()  # .splitlines() to plit lines into list
 
                     except Exception as err:
                         print(f"Error sending commands: {err}", file=sys.stderr)
@@ -309,6 +309,32 @@ class Connect:
                 self.version = config[x].split("Version ")[1].split(" ")[0]
                 break
         return self.version
+
+    def uptime(self, format="seconds"):
+        # Find version for show version
+        config = self.exec("show version | i Uptime for this control processor ")
+        if format == "string":
+            return config.split("Uptime for this control processor is ")[1]
+        uptime_string = config.split("Uptime for this control processor is ")[1].split(",")
+        uptime = 0
+        for time_range in uptime_string:
+            if re.search("years", time_range):
+                uptime += int(time_range.strip().split(" ")[0].strip()) * 525600  # minutes per year
+            elif  re.search("months", time_range):
+                uptime += int(time_range.strip().split(" ")[0].strip()) * 43800  # minutes per month
+            elif  re.search("weeks", time_range):
+                uptime += int(time_range.strip().split(" ")[0].strip()) * 10080  # minutes per week
+            elif  re.search("days", time_range):
+                uptime += int(time_range.strip().split(" ")[0].strip()) * 1440  # minutes per days
+            elif  re.search("hours", time_range):
+                uptime += int(time_range.strip().split(" ")[0].strip()) * 60  # minutes per hours
+            elif  re.search("minutes", time_range):
+                uptime += int(time_range.strip().split(" ")[0].strip())  # minutes per minutes
+                break
+        if format == "minutes":
+            return uptime
+        else:
+            return uptime * 60
 
     def parse_cdp(self, config=None):
         # Parse show cdp neighbor detail
@@ -541,3 +567,6 @@ class Connect:
             wb.save(destination)
         else:
             return export_data
+
+    def log(self):
+        return self.exec("show log").splitlines()
