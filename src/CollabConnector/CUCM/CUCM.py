@@ -29,7 +29,7 @@ except AttributeError:
 
 class Connect:
     # initialize object set system type and build DB connectors as needed
-    def __init__(self, ipaddr=None, username=None, passwd=None, version=None, wsdl=None):
+    def __init__(self, ipaddr=None, username=None, passwd=None, version=None, wsdl=None, autodiscover=True):
         self.system_type = "cucm"
         self.ipaddr = ipaddr
         self.axl = False
@@ -63,28 +63,29 @@ class Connect:
             self.axl_service = axl.axl_service
             self.axl = axl
 
-        self.ast = AST.Connect(ipaddr, username, passwd)
+        if autodiscover:
+            self.ast = AST.Connect(ipaddr, username, passwd)
 
-        itl_lookup_device = self.query("SELECT LIMIT 1 name FROM device WHERE name LIKE 'SEP%'")
-        for tftp in self.ast.get_tftp_info(simple=True):
+            itl_lookup_device = self.query("SELECT LIMIT 1 name FROM device WHERE name LIKE 'SEP%'")
+            for tftp in self.ast.get_tftp_info(simple=True):
+                try:
+                    self.tftp.append(TFTP.Connect(tftp, itl_lookup_device[0]['name']))
+                except:
+                    pass
+
+            self.cluster = self.ast.cluster
+            if self.cluster:
+                self.serviceability = Serviceability.Connect(ipaddr, username, passwd, self.cluster['nodes'])
+            else:
+                self.serviceability = Serviceability.Connect(ipaddr, username, passwd)
+
             try:
-                self.tftp.append(TFTP.Connect(tftp, itl_lookup_device[0]['name']))
-            except:
-                pass
+                self.dime = DIME.Connect(ipaddr, username, passwd)
+            except Exception as err:
+                print(f"Could not connect to DIME: {err}")
 
-        self.cluster = self.ast.cluster
-        if self.cluster:
-            self.serviceability = Serviceability.Connect(ipaddr, username, passwd, self.cluster['nodes'])
-        else:
-            self.serviceability = Serviceability.Connect(ipaddr, username, passwd)
-
-        try:
-            self.dime = DIME.Connect(ipaddr, username, passwd)
-        except Exception as err:
-            print(f"Could not connect to DIME: {err}")
-
-        # self.logs = Logs(ipaddr, username, passwd)
-        self.cdr = CDR(ipaddr, username, passwd)
+            # self.logs = Logs(ipaddr, username, passwd)
+            self.cdr = CDR(ipaddr, username, passwd)
 
         print("Connected.")
 
@@ -298,7 +299,7 @@ class Connect:
 
     def update_pt(self, uuid, partition):
         try:
-            dn_return = self.update.Line(uuid=uuid, newRoutePartitionName=partition)
+            dn_return = self.axl_service.updateLine(uuid=uuid, newRoutePartitionName=partition)
 
         except Exception as err:
             print(f"Error during DN Update: ", err)

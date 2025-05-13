@@ -76,7 +76,7 @@ class Connect:
             if self.config[i] != "!":
                 self.config_sections[-1] += f"{self.config[i]}\n"
             i += 1
-            if i < len(self.config) and re.match("^[^\s].*", self.config[i]):
+            if i < len(self.config) and re.match(r"^[^\s].*", self.config[i]):
                 self.config_sections.append("")
         self.parse_version()
         self.parse_dialpeers()
@@ -108,13 +108,13 @@ class Connect:
                 if re.search("^sh", command):
                     try:
                         command_out = self.netmiko.send_command(command, cmd_verify=True,
-                                                                strip_prompt=False, read_timeout=90.0).splitlines()  # .splitlines() to plit lines into list
+                                                                strip_prompt=False).splitlines()  # .splitlines() to plit lines into list
 
                     except Exception as err:
                         print(f"Error sending commands: {err}", file=sys.stderr)
                         command_out = False
 
-                    if command_out and not re.search("\% Invalid input detected at ", str(command_out)):
+                    if command_out and not re.search(r"\% Invalid input detected at ", str(command_out)):
                         command_out.pop()
                         output.append('\n'.join(command_out))
                     else:
@@ -127,7 +127,7 @@ class Connect:
                         command_out = self.netmiko.send_command_timing(command, cmd_verify=True,
                                                                        strip_prompt=False)  # .splitlines() to plit lines into list
                         if auto_confirm:
-                            while re.search("\]$", command_out) or re.search("\?$", command_out.strip()):
+                            while re.search(r"\]$", command_out) or re.search(r"\?$", command_out.strip()):
                                 print(f"{command} - {command_out} - Auto Confirming")
                                 try:
                                     command_out = self.netmiko.send_command_timing("")
@@ -310,32 +310,6 @@ class Connect:
                 break
         return self.version
 
-    def uptime(self, format="seconds"):
-        # Find version for show version
-        config = self.exec("show version | i Uptime for this control processor ")
-        if format == "string":
-            return config.split("Uptime for this control processor is ")[1]
-        uptime_string = config.split("Uptime for this control processor is ")[1].split(",")
-        uptime = 0
-        for time_range in uptime_string:
-            if re.search("years", time_range):
-                uptime += int(time_range.strip().split(" ")[0].strip()) * 525600  # minutes per year
-            elif  re.search("months", time_range):
-                uptime += int(time_range.strip().split(" ")[0].strip()) * 43800  # minutes per month
-            elif  re.search("weeks", time_range):
-                uptime += int(time_range.strip().split(" ")[0].strip()) * 10080  # minutes per week
-            elif  re.search("days", time_range):
-                uptime += int(time_range.strip().split(" ")[0].strip()) * 1440  # minutes per days
-            elif  re.search("hours", time_range):
-                uptime += int(time_range.strip().split(" ")[0].strip()) * 60  # minutes per hours
-            elif  re.search("minutes", time_range):
-                uptime += int(time_range.strip().split(" ")[0].strip())  # minutes per minutes
-                break
-        if format == "minutes":
-            return uptime
-        else:
-            return uptime * 60
-
     def parse_cdp(self, config=None):
         # Parse show cdp neighbor detail
         if config:
@@ -448,6 +422,7 @@ class Connect:
         return return_string
 
     def parse_dialpeers(self, config=None):
+        dialpeer_config = []
         if config:
             dialpeer_config = self.fix_file_format(config)
         else:
@@ -567,6 +542,3 @@ class Connect:
             wb.save(destination)
         else:
             return export_data
-
-    def log(self):
-        return self.exec("show log").splitlines()
