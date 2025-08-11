@@ -5,7 +5,7 @@ backend-path = ["."]
 
 [project]
 name = "CollabConnector"  # Replace with your actual package name
-version = "0.1.1747171588"
+version = "0.1.1754922333"
 
 # Add a brief description of your project
 description = "An attempt at a simplified API collection for Cisco Collab products"
