@@ -1,10 +1,10 @@
 [build-system]
-requires = ["setuptools>=68.0", "wheel"]
-build-backend = "setuptools.build_meta"
+requires = ["hatchling"]
+build-backend = "hatchling.build"
 
 [project]
 name = "CollabConnector"
-version = "0.1.1754923401"
+version = "0.1.1754923812"
 description = "An attempt at a simplified API collection for Cisco Collab products"
 readme = "README.md"
 license = "MIT"
@@ -39,8 +39,16 @@ Homepage = "https://github.com/mycollablab/CollabConnector"
 Repository = "https://github.com/mycollablab/CollabConnector"
 "Bug Tracker" = "https://github.com/mycollablab/CollabConnector/issues"
 
-[tool.setuptools.packages.find]
-where = ["src"]
 
-[tool.setuptools.package-data]
-CollabConnector = ["CUCM/AXL/schema/*/*.wsdl", "CUCM/AXL/schema/*/*.xsd"]
+[tool.hatch.build.targets.wheel]
+packages = ["src/CollabConnector"]
+
+[tool.hatch.build.targets.wheel.sources]
+"src" = ""
+
+[tool.hatch.build]
+include = [
+    "src/CollabConnector/**/*.py",
+    "src/CollabConnector/CUCM/AXL/schema/**/*.wsdl",
+    "src/CollabConnector/CUCM/AXL/schema/**/*.xsd",
+]

@@ -1,4 +1,0 @@
-include README.md
-recursive-include src/CollabConnector *.py
-recursive-include src/CollabConnector/CUCM/AXL/schema *.wsdl *.xsd
-global-exclude LICENSE*
