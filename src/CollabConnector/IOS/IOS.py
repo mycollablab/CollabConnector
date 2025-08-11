@@ -62,7 +62,7 @@ class Connect:
 
         else:
             self.status = True
-            print(f"Connected to device: {self.device_login['ip']}", file=sys.stderr)
+            # print(f"Connected to device: {self.device_login['ip']}", file=sys.stderr)
 
             # send find_prompt() in background every 30sec to keep session alive
             keepalive = threading.Thread(target=self.session_keepalive, args=())  # create thread process
@@ -159,9 +159,12 @@ class Connect:
 
     def save(self):
         current_time = int(time.time())
-        if self.exec(f'copy start {current_time}_Running-Config.txt'):
-            if self.exec('copy run start'):
-                return True
+        if self.exec([f'copy start {current_time}_Starting-Config.txt', "","",""]):
+            if save := self.exec(['copy run start', "", "","",""]):
+                if "[OK]" in str(save):
+                    return True
+                else:
+                    return False
 
         print("Error saving IOS config.", file=sys.stderr)
         return False

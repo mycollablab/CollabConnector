@@ -1,6 +1,7 @@
 [build-system]
-requires = ['setuptools>=42']
-build-backend = 'setuptools.build_meta'
+requires = ["setuptools==70.1.0", "wheel"]
+build-backend = "setuptools.build_meta"
+backend-path = ["."]
 
 [project]
 name = "CollabConnector"  # Replace with your actual package name
@@ -11,4 +12,9 @@ description = "An attempt at a simplified API collection for Cisco Collab produc
 
 # It's also good practice to include:
 readme = "README.md" # If you have a README file
+license = {file = "LICENSE"}
 requires-python = ">=3.8" # Specify the Python versions your project supports
+
+classifiers = [
+    # Add any necessary classifiers here
+]

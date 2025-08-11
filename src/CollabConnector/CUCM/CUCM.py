@@ -3,6 +3,7 @@ from requests import Session
 from requests.auth import HTTPBasicAuth
 import sys
 import xmltodict
+import zeep
 import re
 import os
 import json
@@ -246,11 +247,18 @@ class Connect:
             i += device_count
 
             # Get reg statuses
-            try:
-                resp = self.risport.selectCmDevice(state_info, risport_search_criteria)
-            except Fault as err:
-                print(f'Zeep error: selectCmDevice: {err}', file=sys.stderr)
-                return False
+            while True:
+                try:
+                    resp = self.risport.selectCmDevice(state_info, risport_search_criteria)
+                except zeep.exceptions.Fault as err:
+                    if "Exceeded allowed rate for Reatime information. Current allowed rate for realtime information is 15 requests per minute" in str(err):
+                        print("Risport Request thottled...")
+                        time.sleep(60/15)
+                    else:
+                        print(f'Zeep error: selectCmDevice: {err}', file=sys.stderr)
+                        return False
+                else:
+                    break
 
             # format results for easy parsing
             for node in resp['SelectCmDeviceResult']['CmNodes']['item']:
