@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "CollabConnector"
-version = "0.1.1754923812"
+version = "0.1.1754924847"
 description = "An attempt at a simplified API collection for Cisco Collab products"
 readme = "README.md"
 license = "MIT"

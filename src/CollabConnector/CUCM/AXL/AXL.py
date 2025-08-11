@@ -3,16 +3,99 @@ from requests import Session
 from requests.auth import HTTPBasicAuth
 import sys
 import os
-import lxml
+import xml.etree.ElementTree as ET
 from zeep.transports import Transport
 from zeep import Client, Settings
 from zeep.helpers import serialize_object
+from zeep.exceptions import Fault
+import inspect
+from typing import List, Dict, Any, Optional
 
 requests.packages.urllib3.disable_warnings()
 
 
+class DynamicAXLEndpoint:
+    """Dynamic endpoint handler for AXL SOAP operations"""
+    
+    def __init__(self, axl_service, operation_name: str, wsdl_info: Dict):
+        self.axl_service = axl_service
+        self.operation_name = operation_name
+        self.wsdl_info = wsdl_info
+        self.required_params = wsdl_info.get('required_params', [])
+        self.optional_params = wsdl_info.get('optional_params', [])
+        self.response_element = wsdl_info.get('response_element')
+    
+    def __call__(self, **kwargs) -> List[Dict[str, Any]]:
+        """Execute the AXL operation with provided parameters"""
+        # Validate required parameters
+        missing_params = [param for param in self.required_params if param not in kwargs]
+        if missing_params:
+            raise ValueError(f"Missing required parameters for {self.operation_name}: {missing_params}")
+        
+        try:
+            # Get the operation method from the service
+            operation = getattr(self.axl_service, self.operation_name)
+            
+            # Execute the operation
+            response = operation(**kwargs)
+            
+            # Process response to always return list of dicts
+            return self._process_response(response)
+            
+        except Fault as err:
+            print(f"AXL SOAP Fault in {self.operation_name}: {str(err)}", file=sys.stderr)
+            return []
+        except Exception as err:
+            print(f"AXL error in {self.operation_name}: {str(err)}", file=sys.stderr)
+            return []
+    
+    def _process_response(self, response) -> List[Dict[str, Any]]:
+        """Process SOAP response to return consistent list of dicts format"""
+        if not response or not hasattr(response, 'get'):
+            return []
+        
+        # Handle different response types
+        return_data = response.get('return')
+        if not return_data:
+            return []
+        
+        # Serialize the response to dict
+        serialized = serialize_object(return_data, dict)
+        
+        # Extract the actual data based on response element
+        if self.response_element and self.response_element in serialized:
+            data = serialized[self.response_element]
+        else:
+            # Fallback to first non-metadata key
+            data = serialized
+        
+        # Always return list of dicts
+        if data is None:
+            return []
+        elif isinstance(data, dict):
+            return [data]
+        elif isinstance(data, list):
+            return data
+        else:
+            return [{'result': data}]
+    
+    def get_help(self) -> str:
+        """Return help information for this endpoint"""
+        help_text = f"AXL Endpoint: {self.operation_name}\n\n"
+        
+        if self.required_params:
+            help_text += f"Required parameters: {', '.join(self.required_params)}\n"
+        
+        if self.optional_params:
+            help_text += f"Optional parameters: {', '.join(self.optional_params)}\n"
+        
+        help_text += f"\nReturns: List[Dict[str, Any]]\n"
+        
+        return help_text
+
+
 class Connect:
-    def __init__(self, ipaddr, username, passwd, version="14.0", wsdl=None):
+    def __init__(self, ipaddr, username, passwd, version="15.0", wsdl=None):
         # if type= cucm then set username/password for AXL connection
         if ipaddr is None or passwd is None or username is None:
             raise Exception(
@@ -45,10 +128,152 @@ class Connect:
                     self.axl_service = self.axl_client.create_service(
                         '{http://www.cisco.com/AXLAPIService/}AXLAPIBinding',
                         f'https://{ipaddr}:8443/axl/')
+                    
+                    # Parse WSDL to extract endpoint information
+                    self.wsdl_file = wsdl
+                    self.version = version
+                    self._endpoint_cache = {}
+                    self._parse_wsdl_endpoints()
 
                 except Exception as err:
                     print(f"SOAP/AXL Error could not create service: {err}", file=sys.stderr)
                     self.axl_service = False
+    
+    def _parse_wsdl_endpoints(self):
+        """Parse WSDL files to extract endpoint information including required/optional parameters"""
+        try:
+            # Parse the main WSDL file to get operations
+            wsdl_tree = ET.parse(self.wsdl_file)
+            wsdl_root = wsdl_tree.getroot()
+            
+            # Find all messages (operations)
+            operations = {}
+            for message in wsdl_root.findall('.//{http://schemas.xmlsoap.org/wsdl/}message'):
+                message_name = message.get('name', '')
+                if message_name.endswith('In'):
+                    op_name = message_name[:-2]  # Remove 'In' suffix
+                    operations[op_name] = {'input_message': message_name}
+            
+            # Parse the XSD schema file for parameter details
+            xsd_file = os.path.join(os.path.dirname(self.wsdl_file), 'AXLSoap.xsd')
+            if os.path.exists(xsd_file):
+                xsd_tree = ET.parse(xsd_file)
+                xsd_root = xsd_tree.getroot()
+                
+                # Cache endpoint information
+                for op_name in operations.keys():
+                    self._endpoint_cache[op_name] = self._extract_operation_info(xsd_root, op_name)
+                    
+        except Exception as e:
+            print(f"Warning: Could not parse WSDL endpoints: {e}", file=sys.stderr)
+            self._endpoint_cache = {}
+    
+    def _extract_operation_info(self, xsd_root, operation_name: str) -> Dict:
+        """Extract parameter information for a specific operation from XSD"""
+        info = {
+            'required_params': [],
+            'optional_params': [],
+            'response_element': None
+        }
+        
+        try:
+            # Look for the operation element in XSD
+            for element in xsd_root.findall('.//{http://www.w3.org/2001/XMLSchema}element'):
+                if element.get('name') == operation_name:
+                    # Find the complex type definition
+                    type_name = element.get('type', '').replace('axlapi:', '')
+                    if type_name:
+                        self._extract_params_from_type(xsd_root, type_name, info)
+                    break
+            
+            # Look for response element
+            response_name = f"{operation_name}Response"
+            for element in xsd_root.findall('.//{http://www.w3.org/2001/XMLSchema}element'):
+                if element.get('name') == response_name:
+                    info['response_element'] = self._find_response_element(xsd_root, element)
+                    break
+                    
+        except Exception as e:
+            print(f"Warning: Could not extract info for {operation_name}: {e}", file=sys.stderr)
+        
+        return info
+    
+    def _extract_params_from_type(self, xsd_root, type_name: str, info: Dict):
+        """Extract parameters from a complex type definition"""
+        for complex_type in xsd_root.findall('.//{http://www.w3.org/2001/XMLSchema}complexType'):
+            if complex_type.get('name') == type_name:
+                # Look for sequence elements
+                for sequence in complex_type.findall('.//{http://www.w3.org/2001/XMLSchema}sequence'):
+                    for element in sequence.findall('.//{http://www.w3.org/2001/XMLSchema}element'):
+                        param_name = element.get('name')
+                        min_occurs = element.get('minOccurs', '1')
+                        
+                        if param_name:
+                            if min_occurs == '0':
+                                info['optional_params'].append(param_name)
+                            else:
+                                info['required_params'].append(param_name)
+                break
+    
+    def _find_response_element(self, xsd_root, response_element) -> Optional[str]:
+        """Find the main data element in the response"""
+        try:
+            type_name = response_element.get('type', '').replace('axlapi:', '')
+            if type_name:
+                for complex_type in xsd_root.findall('.//{http://www.w3.org/2001/XMLSchema}complexType'):
+                    if complex_type.get('name') == type_name:
+                        for sequence in complex_type.findall('.//{http://www.w3.org/2001/XMLSchema}sequence'):
+                            for element in sequence.findall('.//{http://www.w3.org/2001/XMLSchema}element'):
+                                element_name = element.get('name')
+                                if element_name and element_name != 'return':
+                                    return element_name
+        except Exception:
+            pass
+        return None
+    
+    def __getattr__(self, name: str):
+        """Enable dynamic access to AXL endpoints using CUCM.AXL.<endpoint> syntax"""
+        if not hasattr(self, 'axl_service') or not self.axl_service:
+            raise AttributeError(f"AXL service not initialized. Cannot access endpoint '{name}'")
+        
+        # Check if this is a valid AXL operation
+        if hasattr(self.axl_service, name):
+            # Get cached endpoint information
+            wsdl_info = self._endpoint_cache.get(name, {
+                'required_params': [],
+                'optional_params': [],
+                'response_element': None
+            })
+            
+            # Return a dynamic endpoint object
+            return DynamicAXLEndpoint(self.axl_service, name, wsdl_info)
+        
+        # If not found, raise AttributeError
+        raise AttributeError(f"'{self.__class__.__name__}' object has no attribute '{name}'. "
+                           f"'{name}' is not a valid AXL endpoint.")
+    
+    def list_endpoints(self) -> List[str]:
+        """Return a list of all available AXL endpoints"""
+        if not hasattr(self, 'axl_service') or not self.axl_service:
+            return []
+        
+        # Get all available operations from the service
+        operations = []
+        for operation_name in dir(self.axl_service):
+            if not operation_name.startswith('_') and callable(getattr(self.axl_service, operation_name)):
+                operations.append(operation_name)
+        
+        return sorted(operations)
+    
+    def get_endpoint_help(self, endpoint_name: str) -> str:
+        """Get help information for a specific endpoint"""
+        try:
+            endpoint = getattr(self, endpoint_name)
+            if isinstance(endpoint, DynamicAXLEndpoint):
+                return endpoint.get_help()
+            return f"No help available for endpoint: {endpoint_name}"
+        except AttributeError:
+            return f"Endpoint '{endpoint_name}' not found"
 
     def elements_to_dict(self, input):
         if input is None or isinstance(input, (str, int, float, complex, bool, tuple)):
