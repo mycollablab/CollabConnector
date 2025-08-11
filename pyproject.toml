@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "CollabConnector"
-version = "0.1.1754923370"
+version = "0.1.1754923401"
 description = "An attempt at a simplified API collection for Cisco Collab products"
 readme = "README.md"
 license = "MIT"
